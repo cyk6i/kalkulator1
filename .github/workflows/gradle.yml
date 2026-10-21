@@ -11,6 +11,10 @@ on:
       - '**/*.java'
       - '**/*.xml'
       - '**/*.zip'
+      - '**/gradlew'
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -26,32 +30,42 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Cari proyek Android
+      - name: Extract project ZIP if needed
         run: |
-          echo "Isi repository:"
+          if [ ! -f "gradlew" ] && [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
+            ZIP=$(find . -maxdepth 2 -type f -name '*.zip' | head -n 1)
+
+            if [ -n "$ZIP" ]; then
+              echo "Mengekstrak $ZIP"
+              mkdir -p extracted
+              unzip -q "$ZIP" -d extracted
+            fi
+          fi
+
+          echo "Daftar file proyek:"
           find . -maxdepth 4 -type f | head -200
 
-          if [ ! -f "settings.gradle" ] && \
-             [ ! -f "settings.gradle.kts" ] && \
-             [ ! -f "build.gradle" ] && \
-             [ ! -f "build.gradle.kts" ]; then
-            echo "Proyek Gradle belum ditemukan."
-            echo "Jika proyek ada dalam ZIP, ZIP perlu diekstrak terlebih dahulu."
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Find Android project
+        run: |
+          GRADLEW=$(find . -type f -name gradlew -not -path './.git/*' | head -n 1)
+
+          if [ -z "$GRADLEW" ]; then
+            echo "ERROR: gradlew tidak ditemukan."
+            echo "Pastikan ZIP berisi proyek Android Gradle yang lengkap."
             exit 1
           fi
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+          echo "GRADLEW=$GRADLEW" >> "$GITHUB_ENV"
+          echo "Proyek ditemukan: $GRADLEW"
 
       - name: Build APK
         run: |
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-            ./gradlew assembleDebug
-          else
-            echo "File gradlew tidak ditemukan."
-            exit 1
-          fi
+          chmod +x "$GRADLEW"
+          cd "$(dirname "$GRADLEW")"
+          ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
